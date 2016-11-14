@@ -34,3 +34,7 @@ remote combination lock applications.
 ## Who this book is for:
 
 Students and hobbyists interested in building custom interfaces for their Raspberry Pis.
+
+## Apress
+
+http://www.apress.com/us/book/9781484224052
