@@ -1,0 +1,76 @@
+#!/bin/bash
+
+DEV="${1:-1-0048}"
+I2CBUS="/sys/bus/i2c/devices/i2c-1"
+DEVPATH="$I2CBUS/$DEV"
+echo "Using device: $DEVPATH" >/dev/tty
+
+if [ ! -d "$I2CBUS" ] ; then
+	echo "No I2C bus: $I2CBUS"
+	echo "Enable kernel driver."
+	exit 1
+fi
+
+set -eu
+
+# Enable DAC output
+echo 1 >$DEVPATH/out0_enable
+
+# Read ADC input $1
+function read_adc() {
+	AIN="in${1:-2}_input"
+	# Read a few times to get stable value
+	t=$(cat $DEVPATH/$AIN)
+	t=$(cat $DEVPATH/$AIN)
+	t=$(cat $DEVPATH/$AIN)
+	t=$(cat $DEVPATH/$AIN)
+	# Read stable value
+	let r=$(cat $DEVPATH/$AIN)/10
+	echo $r
+}
+
+# Write to DAC value $1 x 10
+function write_dac() {
+	echo "${1}0" >$DEVPATH/out0_output
+}
+
+# Create gnuplot command file
+cat <<EOF >gnuplot.cmd
+set title "Diode 1N914 Plot"
+set xlabel "Voltage across D1"
+set ylabel "Current through D1"
+set autoscale
+set yrange [0:0.0008]
+plot "diode.dat" using 1:2 with lines
+EOF
+
+# Generate plot data
+(
+let dac=0
+while [ $dac -lt 256 ] ; do
+	write_dac $dac # Write DAC voltage level
+
+	let VD1=$(read_adc 0) # Read VD1
+
+	# Compute V
+	V=$(bc -l <<<"$VD1/256*3.3")
+
+	let VT=$(read_adc 1) # V total
+
+	let VR=$VT-VD1 # V across R
+	if [ $VR -lt 0 ] ; then
+		let VR=0 # Eliminate jitter case
+	fi
+
+	# Compute D1 current
+	I=$(bc -l <<<"($VR/256*3.3)/3300")
+
+	echo $V $I
+	let dac=dac+1
+done
+) | tee diode.dat
+
+echo gnuplot -p gnuplot.cmd
+exec gnuplot -p gnuplot.cmd
+
+# End
